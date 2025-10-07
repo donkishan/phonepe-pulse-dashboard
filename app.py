@@ -140,9 +140,64 @@ if page == "Home":
         total_users = df_users[df_users["Years"] == selected_year]["RegisteredUser"].sum()
         st.metric("Registered Users", f"{total_users:,}")
 
-    # ---- State-wise Bar Chart ----
+
+        # ---- State-wise Bar Chart ----
     st.markdown("### State-wise Overview")
     st.bar_chart(df_map_agg.set_index("States")[value_column])
+        # ---- 🔝 Top 10 Districts by Registered Users (Filtered) ----
+    st.markdown("## 🔝 Top 10 Districts by Registered Users")
+
+    # Reconnect to DB
+    conn = get_connection()
+
+    # Dynamic query based on selected year and quarter
+    if selected_quarter == "All":
+        query_top_users = f"""
+            SELECT 
+                States,
+                Districts,
+                SUM(RegisteredUser) AS TotalUsers
+            FROM map_user
+            WHERE Years = {selected_year}
+            GROUP BY States, Districts
+            ORDER BY TotalUsers DESC
+            LIMIT 10;
+        """
+    else:
+        query_top_users = f"""
+            SELECT 
+                States,
+                Districts,
+                SUM(RegisteredUser) AS TotalUsers
+            FROM map_user
+            WHERE Years = {selected_year} AND Quarter = {selected_quarter}
+            GROUP BY States, Districts
+            ORDER BY TotalUsers DESC
+            LIMIT 10;
+        """
+
+    df_top_users = pd.read_sql(query_top_users, conn)
+    conn.close()
+
+    # Display data
+    st.dataframe(df_top_users, use_container_width=True)
+
+    # ---- Plotly Chart ----
+    fig_top = px.bar(
+        df_top_users,
+        x="Districts",
+        y="TotalUsers",
+        color="States",
+        text_auto=True,
+        title=f"Top 10 Districts - Registered Users ({selected_year}, Quarter: {selected_quarter})"
+    )
+    fig_top.update_layout(
+        xaxis_title="District",
+        yaxis_title="Total Registered Users",
+        title_x=0.5
+    )
+    st.plotly_chart(fig_top, use_container_width=True)
+
 
 
 
@@ -362,169 +417,3 @@ elif page == "Analysis":
             st.plotly_chart(fig4, use_container_width=True)
 
     conn.close()
-
-# ================= Analysis Page =================
-# elif page == "Analysis":
-#     st.title("Business Case Study")
-
-#     # Dropdown for Case Studies
-#     case_study = st.selectbox(
-#         "Choose Case Study",
-#         [
-#             "Decoding Transaction Dynamics on PhonePe",
-#             "Device Dominance and User Engagement Analysis",
-#             "Insurance Penetration and Growth Potential Analysis",
-#             "Transaction Analysis for Market Expansion",
-#             "User Engagement and Growth Strategy"
-#         ]
-#     )
-
-#     st.markdown(f"<h2 style='color:red;'>State-wise Transaction Analysis</h2>", unsafe_allow_html=True)
-
-#     # Fetch states dynamically from DB
-#     conn = get_connection()
-#     cursor = conn.cursor()
-#     cursor.execute("SELECT DISTINCT States FROM aggregated_transaction ORDER BY States ASC;")
-#     states = [row[0] for row in cursor.fetchall()]
-#     conn.close()
-
-#     selected_state = st.selectbox("Choose a State:", states)
-
-#     # ================= CASE STUDY LOGIC =================
-#     conn = get_connection()
-
-#     # ---------- Case 1 & 4: Transaction Trends ----------
-#     if case_study in ["Decoding Transaction Dynamics on PhonePe", "Transaction Analysis for Market Expansion"]:
-#         query = f"""
-#             SELECT Years, SUM(Transaction_count) AS total_transactions,
-#                    SUM(Transaction_amount) AS total_amount
-#             FROM aggregated_transaction
-#             WHERE States = '{selected_state}'
-#             GROUP BY Years
-#             ORDER BY Years ASC;
-#         """
-#         df = pd.read_sql(query, conn)
-
-#         if not df.empty:
-#             col1, col2 = st.columns(2)
-
-#             with col1:
-#                 st.subheader("Total Transactions Over Years")
-#                 fig1 = px.line(df, x="Years", y="total_transactions", markers=True)
-#                 st.plotly_chart(fig1, use_container_width=True)
-
-#             with col2:
-#                 st.subheader("Total Transaction Amount Over Years")
-#                 fig2 = px.line(df, x="Years", y="total_amount", markers=True)
-#                 st.plotly_chart(fig2, use_container_width=True)
-
-#             # Payment category distribution (Pie charts)
-#             query_cat = f"""
-#                 SELECT Transaction_type, SUM(Transaction_count) AS total_count,
-#                        SUM(Transaction_amount) AS total_amount
-#                 FROM aggregated_transaction
-#                 WHERE States = '{selected_state}'
-#                 GROUP BY Transaction_type;
-#             """
-#             df_cat = pd.read_sql(query_cat, conn)
-
-#             st.markdown("<h2 style='color:red;'>Payment Category Performance</h2>", unsafe_allow_html=True)
-#             col3, col4 = st.columns(2)
-
-#             with col3:
-#                 st.subheader("Transaction Count Distribution")
-#                 fig3 = px.pie(df_cat, names="Transaction_type", values="total_count", hole=0.4)
-#                 st.plotly_chart(fig3, use_container_width=True)
-
-#             # with col4:
-#             #     st.subheader("Transaction Amount Distribution (in ₹)")
-#             #     fig4 = px.pie(df_cat, names="Transaction_type", values="total_amount", hole=0.4)
-#             #     st.plotly_chart(fig4, use_container_width=True)
-#             with col4:
-#                 st.subheader("Transaction Amount Distribution (in ₹)")
-#                 fig4 = px.pie(df_cat, names="Transaction_type", values="total_amount", hole=0.4)
-#                 st.plotly_chart(fig4, use_container_width=True)
-
-#         # ----- Bar Chart for Payment Categories -----
-#         st.subheader("Payment Categories Comparison (Bar Chart)")
-#         fig_bar = px.bar(
-#             df_cat,
-#             x="Transaction_type",
-#             y="total_amount",
-#             hover_data=["total_count"],
-#             barmode="group"
-#         )
-#         st.plotly_chart(fig_bar, use_container_width=True)
-
-
-#     # ---------- Case 2: Device Dominance ----------
-#     elif case_study == "Device Dominance and User Engagement Analysis":
-#         query_user = f"""
-#             SELECT Years, Brands, SUM(Transaction_count) AS total_users, AVG(Percentage) AS percentage
-#             FROM aggregated_user
-#             WHERE States = '{selected_state}'
-#             GROUP BY Years, Brands
-#             ORDER BY Years;
-#         """
-#         df_user = pd.read_sql(query_user, conn)
-
-#         if not df_user.empty:
-#             st.subheader("📱 Device-wise User Distribution")
-#             fig = px.bar(df_user, x="Years", y="total_users", color="Brands", barmode="group")
-#             st.plotly_chart(fig, use_container_width=True)
-
-#             st.subheader("Device Share % Over Time")
-#             fig2 = px.line(df_user, x="Years", y="percentage", color="Brands", markers=True)
-#             st.plotly_chart(fig2, use_container_width=True)
-
-#     # ---------- Case 3: Insurance Analysis ----------
-#     elif case_study == "Insurance Penetration and Growth Potential Analysis":
-#         query_ins = f"""
-#             SELECT Years, SUM(Insurance_count) AS total_policies,
-#                    SUM(Insurance_amount) AS total_amount
-#             FROM aggregated_insurance
-#             WHERE States = '{selected_state}'
-#             GROUP BY Years
-#             ORDER BY Years ASC;
-#         """
-#         df_ins = pd.read_sql(query_ins, conn)
-
-#         if not df_ins.empty:
-#             col1, col2 = st.columns(2)
-
-#             with col1:
-#                 st.subheader("Insurance Policies Over Years")
-#                 fig = px.line(df_ins, x="Years", y="total_policies", markers=True)
-#                 st.plotly_chart(fig, use_container_width=True)
-
-#             with col2:
-#                 st.subheader("Insurance Amount Over Years")
-#                 fig2 = px.line(df_ins, x="Years", y="total_amount", markers=True)
-#                 st.plotly_chart(fig2, use_container_width=True)
-
-#     # ---------- Case 5: User Engagement ----------
-#     elif case_study == "User Engagement and Growth Strategy":
-#         query_map_user = f"""
-#             SELECT Years, SUM(RegisteredUser) AS total_users,
-#                    SUM(AppOpens) AS total_opens
-#             FROM map_user
-#             WHERE States = '{selected_state}'
-#             GROUP BY Years
-#             ORDER BY Years ASC;
-#         """
-#         df_map = pd.read_sql(query_map_user, conn)
-
-#         if not df_map.empty:
-#             col1, col2 = st.columns(2)
-
-#             with col1:
-#                 st.subheader("Registered Users Over Years")
-#                 fig = px.line(df_map, x="Years", y="total_users", markers=True)
-#                 st.plotly_chart(fig, use_container_width=True)
-
-#             with col2:
-#                 st.subheader("App Opens Over Years")
-#                 fig2 = px.line(df_map, x="Years", y="total_opens", markers=True)
-#                 st.plotly_chart(fig2, use_container_width=True)
-
-#     conn.close()
